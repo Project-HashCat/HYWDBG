@@ -137,6 +137,11 @@ Invoke-Step "Using toolchains" {
 }
 
 if (-not $SkipRustBuild) {
+    if (-not (Test-Path "deps_titan")) {
+        Write-Host "[HYWDbg] Extracting TitanEngine..."
+        Expand-Archive -Path "TitanEngine-2025.08.18.zip" -DestinationPath "deps_titan" -Force
+    }
+
     Invoke-Step "Building Rust core and backends" {
         Push-Location $root
         try {

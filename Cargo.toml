@@ -4,6 +4,7 @@ members = [
     "crates/hywdbg-protocol",
     "crates/hywdbg-core",
     "crates/hywdbg-backend-common",
+    "crates/titanengine-sys",
 
     "apps/hywdbg-core-daemon",
     "apps/hywdbg-slint",
