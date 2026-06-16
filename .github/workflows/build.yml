@@ -11,16 +11,12 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        arch: [x64, x86]
+        arch: [x64]
         include:
           - arch: x64
             target: x86_64-pc-windows-msvc
             qt_arch: win64_msvc2019_64
             artifact_name: HYWDbg-Release-x64
-          - arch: x86
-            target: i686-pc-windows-msvc
-            qt_arch: win32_msvc2019
-            artifact_name: HYWDbg-Release-x86
 
     steps:
     - uses: actions/checkout@v4
