@@ -24,7 +24,7 @@ lazy_static! {
     static ref EVENT_TX: Mutex<Option<Sender<RpcResponse>>> = Mutex::new(None);
     static ref CMD_RX: Mutex<Option<Receiver<String>>> = Mutex::new(None);
     static ref CMD_TX: Mutex<Option<Sender<String>>> = Mutex::new(None);
-    static ref LAST_CONTEXT: Mutex<RegDump> = Mutex::new(RegDump { arch: "x64".into(), registers: HashMap::new() });
+    static ref LAST_CONTEXT: Mutex<RegDump> = Mutex::new(RegDump { arch: "x64".into(), registers: BTreeMap::new() });
 }
 
 // Ensure string is null-terminated for C FFI
@@ -76,7 +76,7 @@ fn get_rip() -> u64 {
 fn update_last_context() {
     let mut r = RegDump {
         arch: "x64".into(),
-        registers: HashMap::new(),
+        registers: BTreeMap::new(),
     };
     unsafe {
         r.registers.insert("rax".into(), hex_u64(GetContextData(0) as u64));
@@ -388,7 +388,7 @@ impl BackendHandler for BackendState {
             }
 
             "disasm" => {
-                let mut addr_str = param_str(&params, "addr").unwrap_or_default();
+                let addr_str = param_str(&params, "addr").unwrap_or_default();
                 let mut addr = get_rip();
                 if !addr_str.is_empty() {
                     let clean = addr_str.trim_start_matches("0x").trim_start_matches("0X");
