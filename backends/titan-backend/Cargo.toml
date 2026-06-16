@@ -11,3 +11,4 @@ serde_json.workspace = true
 iced-x86.workspace = true
 hywdbg-protocol = { path = "../../crates/hywdbg-protocol" }
 hywdbg-backend-common = { path = "../../crates/hywdbg-backend-common" }
+titanengine-sys = { path = "../../crates/titanengine-sys" }
