@@ -19,6 +19,7 @@ lazy_static::lazy_static! {
     static ref EVENT_TX: Mutex<Option<Sender<RpcResponse>>> = Mutex::new(None);
     static ref CMD_RX: Mutex<Option<Receiver<String>>> = Mutex::new(None);
     static ref CMD_TX: Mutex<Option<Sender<String>>> = Mutex::new(None);
+    static ref TITAN: TitanEngine = unsafe { TitanEngine::new("TitanEngine.dll").expect("Failed to load TitanEngine.dll") };
 }
 
 // Ensure string is null-terminated for C FFI
@@ -56,7 +57,7 @@ extern "system" fn cb_custom_handler() {
 }
 
 fn get_rip() -> u64 {
-    unsafe { GetContextData(16) as u64 } // 16 = UE_RIP
+    unsafe { TITAN.GetContextData(16) as u64 } // 16 = UE_RIP
 }
 
 fn send_event_and_wait(value: Value) {
@@ -70,10 +71,9 @@ fn send_event_and_wait(value: Value) {
             if cmd == "go" {
                 break;
             } else if cmd == "detach" || cmd == "kill" {
-                unsafe { StopDebug() };
+                unsafe { TITAN.StopDebug() };
                 break;
             }
-            // Other commands like regs/mem are handled by the main thread directly
         }
     }
 }
@@ -137,9 +137,9 @@ impl BackendHandler for BackendState {
                 thread::spawn(move || {
                     unsafe {
                         let path_c = c_str(&path);
-                        InitDebugEx(path_c.as_ptr(), std::ptr::null_mut(), std::ptr::null_mut(), cb_entry_point as *mut _);
-                        SetCustomHandler(0x80000003, cb_system_breakpoint as *mut _); // EXCEPTION_BREAKPOINT
-                        DebugLoop();
+                        TITAN.InitDebugEx(path_c.as_ptr(), std::ptr::null_mut(), std::ptr::null_mut(), cb_entry_point as *mut _);
+                        TITAN.SetCustomHandler(0x80000003, cb_system_breakpoint as *mut _); // EXCEPTION_BREAKPOINT
+                        TITAN.DebugLoop();
                     }
                 });
 
@@ -177,23 +177,23 @@ impl BackendHandler for BackendState {
             "regs" => {
                 // Get Context
                 unsafe {
-                    let rax = GetContextData(0);
-                    let rcx = GetContextData(1);
-                    let rdx = GetContextData(2);
-                    let rbx = GetContextData(3);
-                    let rsp = GetContextData(4);
-                    let rbp = GetContextData(5);
-                    let rsi = GetContextData(6);
-                    let rdi = GetContextData(7);
-                    let r8 = GetContextData(8);
-                    let r9 = GetContextData(9);
-                    let r10 = GetContextData(10);
-                    let r11 = GetContextData(11);
-                    let r12 = GetContextData(12);
-                    let r13 = GetContextData(13);
-                    let r14 = GetContextData(14);
-                    let r15 = GetContextData(15);
-                    let rip = GetContextData(16);
+                    let rax = TITAN.GetContextData(0);
+                    let rcx = TITAN.GetContextData(1);
+                    let rdx = TITAN.GetContextData(2);
+                    let rbx = TITAN.GetContextData(3);
+                    let rsp = TITAN.GetContextData(4);
+                    let rbp = TITAN.GetContextData(5);
+                    let rsi = TITAN.GetContextData(6);
+                    let rdi = TITAN.GetContextData(7);
+                    let r8 = TITAN.GetContextData(8);
+                    let r9 = TITAN.GetContextData(9);
+                    let r10 = TITAN.GetContextData(10);
+                    let r11 = TITAN.GetContextData(11);
+                    let r12 = TITAN.GetContextData(12);
+                    let r13 = TITAN.GetContextData(13);
+                    let r14 = TITAN.GetContextData(14);
+                    let r15 = TITAN.GetContextData(15);
+                    let rip = TITAN.GetContextData(16);
 
                     let mut r = RegDump {
                         arch: "x64".to_string(),
