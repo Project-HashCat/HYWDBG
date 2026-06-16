@@ -135,20 +135,43 @@ impl BackendHandler for BackendState {
 
                 thread::spawn(move || {
                     unsafe {
-                        let path_c = c_str(&path);
-                        InitDebugEx(path_c.as_ptr(), std::ptr::null_mut(), std::ptr::null_mut(), cb_entry_point as *mut _);
-                        SetCustomHandler(0x80000003, cb_system_breakpoint as *mut _); // EXCEPTION_BREAKPOINT
-                        DebugLoop();
+                        // TitanEngine may be picky about backslashes
+                        let dos_path = path.replace("/", "\\");
+                        let path_c = c_str(&dos_path);
+                        
+                        let folder = std::path::Path::new(&path).parent().unwrap_or(std::path::Path::new("")).to_string_lossy().into_owned().replace("/", "\\");
+                        let folder_c = c_str(&folder);
+
+                        eprintln!("[TITAN] Calling InitDebugEx with path: {} and folder: {}", dos_path, folder);
+                        // pass path_c.as_ptr() for command line, and folder_c.as_ptr() for current folder
+                        let pe = InitDebugEx(path_c.as_ptr(), path_c.as_ptr(), folder_c.as_ptr(), cb_entry_point as *mut _);
+                        eprintln!("[TITAN] InitDebugEx returned {:p}", pe);
+                        if pe.is_null() {
+                            eprintln!("[TITAN] InitDebugEx failed!");
+                        } else {
+                            SetCustomHandler(0x80000003, cb_system_breakpoint as *mut _); // EXCEPTION_BREAKPOINT
+                            eprintln!("[TITAN] Calling DebugLoop...");
+                            DebugLoop();
+                        }
+                        eprintln!("[TITAN] DebugLoop exited or InitDebugEx failed!");
+                        // send an error event so the main thread wakes up
+                        if let Some(tx) = EVENT_TX.lock().unwrap().as_ref() {
+                            let _ = tx.send(RpcResponse::err(0, "launch_failed", "DebugLoop exited immediately"));
+                        }
                     }
                 });
 
                 if let Some(rx) = self.ev_rx.as_ref() {
-                    if let Ok(resp) = rx.recv() {
+                    eprintln!("[TITAN] Main thread waiting for rx.recv()...");
+                    if let Ok(resp) = rx.recv_timeout(std::time::Duration::from_secs(10)) {
+                        eprintln!("[TITAN] rx.recv() got response!");
                         self.attached_pid = Some(0);
                         return resp;
+                    } else {
+                        eprintln!("[TITAN] rx.recv() TIMED OUT!");
                     }
                 }
-                RpcResponse::err(0, "launch_failed", "DebugLoop terminated early")
+                RpcResponse::err(0, "launch_failed", "DebugLoop terminated early or timed out")
             }
 
             "go" | "stepInto" | "stepOver" | "stepOut" => {
