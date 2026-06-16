@@ -1,0 +1,38 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/hywdbg-protocol",
+    "crates/hywdbg-core",
+    "crates/hywdbg-backend-common",
+
+    "apps/hywdbg-core-daemon",
+    "apps/hywdbg-slint",
+    "apps/hywdbg-tauri/src-tauri",
+
+    "backends/winapi-backend",
+    "backends/titan-backend",
+    "backends/dbgeng-backend",
+    "backends/lldb-backend",
+    "backends/gdbremote-backend",
+    "backends/frida-backend",
+]
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["HYWDbg contributors"]
+
+[workspace.dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+windows-sys = "0.59"
+slint = "1.16.1"
+slint-build = "1.16.1"
+rfd = "0.16"
+iced-x86 = { version = "1.21.0", default-features = false, features = ["std", "decoder", "nasm"] }

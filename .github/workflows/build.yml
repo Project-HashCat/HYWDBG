@@ -1,0 +1,55 @@
+name: Build HYWDbg
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x64, x86]
+        include:
+          - arch: x64
+            target: x86_64-pc-windows-msvc
+            qt_arch: win64_msvc2019_64
+            artifact_name: HYWDbg-Release-x64
+          - arch: x86
+            target: i686-pc-windows-msvc
+            qt_arch: win32_msvc2019
+            artifact_name: HYWDbg-Release-x86
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable-${{ matrix.target }}
+        targets: ${{ matrix.target }}
+
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: '6.5.3'
+        arch: ${{ matrix.qt_arch }}
+        set-env: true
+        
+    - name: Setup Environment
+      run: |
+        echo "QT_ROOT=$env:Qt6_DIR" >> $env:GITHUB_ENV
+      shell: powershell
+
+    - name: Build HYWDbg
+      run: |
+        .\build-dist.ps1 -Config Release -Clean -NoZip -RustToolchain "stable-${{ matrix.target }}" -RustTarget "${{ matrix.target }}"
+      shell: powershell
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact_name }}
+        path: dist/${{ matrix.artifact_name }}/
