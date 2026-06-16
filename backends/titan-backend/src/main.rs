@@ -95,23 +95,24 @@ fn update_last_context() {
         registers: BTreeMap::new(),
     };
     unsafe {
-        r.registers.insert("rax".into(), hex_u64(GetContextData(0) as u64));
-        r.registers.insert("rcx".into(), hex_u64(GetContextData(1) as u64));
-        r.registers.insert("rdx".into(), hex_u64(GetContextData(2) as u64));
-        r.registers.insert("rbx".into(), hex_u64(GetContextData(3) as u64));
-        r.registers.insert("rsp".into(), hex_u64(GetContextData(4) as u64));
-        r.registers.insert("rbp".into(), hex_u64(GetContextData(5) as u64));
-        r.registers.insert("rsi".into(), hex_u64(GetContextData(6) as u64));
-        r.registers.insert("rdi".into(), hex_u64(GetContextData(7) as u64));
-        r.registers.insert("r8".into(), hex_u64(GetContextData(8) as u64));
-        r.registers.insert("r9".into(), hex_u64(GetContextData(9) as u64));
-        r.registers.insert("r10".into(), hex_u64(GetContextData(10) as u64));
-        r.registers.insert("r11".into(), hex_u64(GetContextData(11) as u64));
-        r.registers.insert("r12".into(), hex_u64(GetContextData(12) as u64));
-        r.registers.insert("r13".into(), hex_u64(GetContextData(13) as u64));
-        r.registers.insert("r14".into(), hex_u64(GetContextData(14) as u64));
-        r.registers.insert("r15".into(), hex_u64(GetContextData(15) as u64));
-        r.registers.insert("rip".into(), hex_u64(GetContextData(16) as u64));
+        r.registers.insert("rax".into(), hex_u64(GetContextData(17) as u64)); // UE_RAX = 17
+        r.registers.insert("rcx".into(), hex_u64(GetContextData(19) as u64)); // UE_RCX = 19
+        r.registers.insert("rdx".into(), hex_u64(GetContextData(20) as u64)); // UE_RDX = 20
+        r.registers.insert("rbx".into(), hex_u64(GetContextData(18) as u64)); // UE_RBX = 18
+        r.registers.insert("rsp".into(), hex_u64(GetContextData(24) as u64)); // UE_RSP = 24
+        r.registers.insert("rbp".into(), hex_u64(GetContextData(23) as u64)); // UE_RBP = 23
+        r.registers.insert("rsi".into(), hex_u64(GetContextData(22) as u64)); // UE_RSI = 22
+        r.registers.insert("rdi".into(), hex_u64(GetContextData(21) as u64)); // UE_RDI = 21
+        r.registers.insert("r8".into(), hex_u64(GetContextData(27) as u64));  // UE_R8 = 27
+        r.registers.insert("r9".into(), hex_u64(GetContextData(28) as u64));  // UE_R9 = 28
+        r.registers.insert("r10".into(), hex_u64(GetContextData(29) as u64)); // UE_R10 = 29
+        r.registers.insert("r11".into(), hex_u64(GetContextData(30) as u64)); // UE_R11 = 30
+        r.registers.insert("r12".into(), hex_u64(GetContextData(31) as u64)); // UE_R12 = 31
+        r.registers.insert("r13".into(), hex_u64(GetContextData(32) as u64)); // UE_R13 = 32
+        r.registers.insert("r14".into(), hex_u64(GetContextData(33) as u64)); // UE_R14 = 33
+        r.registers.insert("r15".into(), hex_u64(GetContextData(34) as u64)); // UE_R15 = 34
+        r.registers.insert("rip".into(), hex_u64(GetContextData(25) as u64)); // UE_RIP = 25
+        r.registers.insert("rflags".into(), hex_u64(GetContextData(26) as u64)); // UE_RFLAGS = 26
     }
     *LAST_CONTEXT.lock().unwrap() = r;
 }
