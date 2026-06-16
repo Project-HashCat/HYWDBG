@@ -81,6 +81,7 @@ struct BackendState {
     active_tid: Option<u32>,
     threads: HashMap<u32, HANDLE>,
     last_event: Option<(u32, u32)>,
+    continue_status: u32,
     next_bp: u64,
     bps: HashMap<u64, Breakpoint>,
 }
@@ -94,6 +95,7 @@ impl Default for BackendState {
             active_tid: None,
             threads: HashMap::new(),
             last_event: None,
+            continue_status: windows_sys::Win32::System::Diagnostics::Debug::DBG_CONTINUE,
             next_bp: 1,
             bps: HashMap::new(),
         }
@@ -225,6 +227,7 @@ impl BackendState {
             self.pid = Some(ev.dwProcessId);
             self.active_tid = Some(ev.dwThreadId);
             self.last_event = Some((ev.dwProcessId, ev.dwThreadId));
+            self.continue_status = windows_sys::Win32::System::Diagnostics::Debug::DBG_CONTINUE;
 
             let mut kind = "unknown".to_string();
             let mut extra = json!({});
@@ -257,7 +260,7 @@ impl BackendState {
                 }
                 EXIT_PROCESS_DEBUG_EVENT => {
                     kind = "exit_process".into();
-                    extra = json!({"exit_code": ev.u.ExitProcess.dwExitCode});
+                    extra = json!({"exitCode": ev.u.ExitProcess.dwExitCode});
                 }
                 LOAD_DLL_DEBUG_EVENT => {
                     kind = "load_dll".into();
@@ -280,7 +283,29 @@ impl BackendState {
                     extra = json!({"base": hex_u64(ev.u.UnloadDll.lpBaseOfDll as u64)});
                 }
                 OUTPUT_DEBUG_STRING_EVENT => {
-                    kind = "debug_string".into();
+                    kind = "output_debug_string".into();
+                    let info = &ev.u.DebugString;
+                    if info.nDebugStringLength > 0 && !self.process.is_null() {
+                        let is_unicode = info.fUnicode != 0;
+                        let len_bytes = info.nDebugStringLength as usize * (if is_unicode { 2 } else { 1 });
+                        let mut buf = vec![0u8; len_bytes];
+                        let mut bytes_read = 0;
+                        if windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory(
+                            self.process,
+                            info.lpDebugStringData as _,
+                            buf.as_mut_ptr() as _,
+                            buf.len(),
+                            &mut bytes_read,
+                        ) != 0 {
+                            let text = if is_unicode {
+                                let u16_buf = unsafe { std::slice::from_raw_parts(buf.as_ptr() as *const u16, bytes_read / 2) };
+                                String::from_utf16_lossy(u16_buf)
+                            } else {
+                                String::from_utf8_lossy(&buf[..bytes_read]).to_string()
+                            };
+                            extra = json!({"message": text.trim_end()});
+                        }
+                    }
                 }
                 RIP_EVENT => {
                     kind = "rip".into();
@@ -291,7 +316,10 @@ impl BackendState {
                     kind = match code {
                         EXCEPTION_BREAKPOINT  => "breakpoint".into(),
                         EXCEPTION_SINGLE_STEP => "single_step".into(),
-                        _                     => "exception".into(),
+                        _ => {
+                            self.continue_status = windows_sys::Win32::System::Diagnostics::Debug::DBG_EXCEPTION_NOT_HANDLED;
+                            "exception".into()
+                        }
                     };
                     let desc = match code as u32 {
                         0x80000001 => "GUARD_PAGE_VIOLATION",
@@ -347,7 +375,7 @@ impl BackendState {
     fn continue_last_and_wait(&mut self) -> Result<Value, String> {
         unsafe {
             if let Some((pid, tid)) = self.last_event.take() {
-                if ContinueDebugEvent(pid, tid, DBG_CONTINUE) == 0 {
+                if windows_sys::Win32::System::Diagnostics::Debug::ContinueDebugEvent(pid, tid, self.continue_status) == 0 {
                     return Err(format!("ContinueDebugEvent failed: {}", last_error()));
                 }
             }
