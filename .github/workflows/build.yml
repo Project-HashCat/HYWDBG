@@ -11,15 +11,22 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        arch: [x64]
+        arch: [x64, x86]
         include:
           - arch: x64
             target: x86_64-pc-windows-msvc
-            qt_arch: win64_msvc2019_64
             artifact_name: HYWDbg-Release-x64
+          - arch: x86
+            target: i686-pc-windows-msvc
+            artifact_name: HYWDbg-Release-x86
 
     steps:
     - uses: actions/checkout@v4
+
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
 
     - name: Set up Rust
       uses: dtolnay/rust-toolchain@stable
@@ -31,7 +38,7 @@ jobs:
       uses: jurplel/install-qt-action@v3
       with:
         version: '6.5.3'
-        arch: ${{ matrix.qt_arch }}
+        arch: win64_msvc2019_64
         set-env: true
         
     - name: Setup Environment

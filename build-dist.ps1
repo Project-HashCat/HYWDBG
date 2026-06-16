@@ -26,10 +26,8 @@ $distRoot = Join-Path $root "dist"
 $cmakeArch = "x64"
 $distSuffix = "x64"
 if ($RustTarget -match "i686") {
-    $cmakeArch = "Win32"
     $distSuffix = "x86"
 } elseif ($RustTarget -match "aarch64") {
-    $cmakeArch = "ARM64"
     $distSuffix = "arm64"
 }
 
