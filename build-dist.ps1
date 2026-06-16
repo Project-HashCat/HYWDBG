@@ -197,13 +197,13 @@ Invoke-Step "Copying HYWDbg executables" {
             if (Test-Path $maybe) { Copy-Item -Force $maybe $distDir }
         }
         Get-ChildItem -Path $rustProfileDir -Filter "*.pdb" -ErrorAction SilentlyContinue | Copy-Item -Destination $distDir -Force -ErrorAction SilentlyContinue
+    }
 
-        if (Test-Path "$root/deps_titan/prebuilt/TitanEngine.dll") {
-            Copy-Item -Force "$root/deps_titan/prebuilt/TitanEngine.dll" $distDir
-        }
-        if (Test-Path "$root/deps_titan/prebuilt/TitanEngine.lib") {
-            Copy-Item -Force "$root/deps_titan/prebuilt/TitanEngine.lib" $distDir
-        }
+    if (Test-Path "$root/deps_titan/prebuilt/TitanEngine.dll") {
+        Copy-Item -Force "$root/deps_titan/prebuilt/TitanEngine.dll" $distDir
+    }
+    if (Test-Path "$root/deps_titan/prebuilt/TitanEngine.lib") {
+        Copy-Item -Force "$root/deps_titan/prebuilt/TitanEngine.lib" $distDir
     }
 
     $themesSource = Join-Path $root "themes"
