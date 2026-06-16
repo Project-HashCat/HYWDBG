@@ -1,16 +1,15 @@
 # ==============================
 # Rust / Cargo
 # ==============================
-/target/
+target/
 **/*.rs.bk
 Cargo.lock
 
 # ==============================
 # Qt / C++ / CMake
 # ==============================
-/dist/
-/build/
-/apps/hywdbg-qt/build/
+dist/
+build/
 CMakeCache.txt
 CMakeFiles
 CMakeScripts
