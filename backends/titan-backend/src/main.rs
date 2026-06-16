@@ -24,6 +24,7 @@ lazy_static! {
     static ref EVENT_TX: Mutex<Option<Sender<RpcResponse>>> = Mutex::new(None);
     static ref CMD_RX: Mutex<Option<Receiver<String>>> = Mutex::new(None);
     static ref CMD_TX: Mutex<Option<Sender<String>>> = Mutex::new(None);
+    static ref LAST_CONTEXT: Mutex<RegDump> = Mutex::new(RegDump { arch: "x64".into(), registers: HashMap::new() });
 }
 
 // Ensure string is null-terminated for C FFI
@@ -33,6 +34,7 @@ fn c_str(s: &str) -> CString {
 
 extern "system" fn cb_entry_point() {
     // Reached entry point
+    update_last_context();
     send_event_and_wait(json!({
         "stopped": true,
         "event": "breakpoint",
@@ -42,6 +44,7 @@ extern "system" fn cb_entry_point() {
 }
 
 extern "system" fn cb_system_breakpoint() {
+    update_last_context();
     send_event_and_wait(json!({
         "stopped": true,
         "event": "breakpoint",
@@ -52,6 +55,7 @@ extern "system" fn cb_system_breakpoint() {
 
 extern "system" fn cb_custom_handler() {
     // A breakpoint set by us
+    update_last_context();
     send_event_and_wait(json!({
         "stopped": true,
         "event": "breakpoint",
@@ -61,7 +65,39 @@ extern "system" fn cb_custom_handler() {
 }
 
 fn get_rip() -> u64 {
-    unsafe { GetContextData(16) as u64 } // 16 = UE_RIP
+    let ctx = LAST_CONTEXT.lock().unwrap();
+    if let Some(rip_str) = ctx.registers.get("rip") {
+        u64::from_str_radix(rip_str.trim_start_matches("0x").trim_start_matches("0X"), 16).unwrap_or(0)
+    } else {
+        0
+    }
+}
+
+fn update_last_context() {
+    let mut r = RegDump {
+        arch: "x64".into(),
+        registers: HashMap::new(),
+    };
+    unsafe {
+        r.registers.insert("rax".into(), hex_u64(GetContextData(0) as u64));
+        r.registers.insert("rcx".into(), hex_u64(GetContextData(1) as u64));
+        r.registers.insert("rdx".into(), hex_u64(GetContextData(2) as u64));
+        r.registers.insert("rbx".into(), hex_u64(GetContextData(3) as u64));
+        r.registers.insert("rsp".into(), hex_u64(GetContextData(4) as u64));
+        r.registers.insert("rbp".into(), hex_u64(GetContextData(5) as u64));
+        r.registers.insert("rsi".into(), hex_u64(GetContextData(6) as u64));
+        r.registers.insert("rdi".into(), hex_u64(GetContextData(7) as u64));
+        r.registers.insert("r8".into(), hex_u64(GetContextData(8) as u64));
+        r.registers.insert("r9".into(), hex_u64(GetContextData(9) as u64));
+        r.registers.insert("r10".into(), hex_u64(GetContextData(10) as u64));
+        r.registers.insert("r11".into(), hex_u64(GetContextData(11) as u64));
+        r.registers.insert("r12".into(), hex_u64(GetContextData(12) as u64));
+        r.registers.insert("r13".into(), hex_u64(GetContextData(13) as u64));
+        r.registers.insert("r14".into(), hex_u64(GetContextData(14) as u64));
+        r.registers.insert("r15".into(), hex_u64(GetContextData(15) as u64));
+        r.registers.insert("rip".into(), hex_u64(GetContextData(16) as u64));
+    }
+    *LAST_CONTEXT.lock().unwrap() = r;
 }
 
 fn send_event_and_wait(value: Value) {
@@ -179,7 +215,12 @@ impl BackendHandler for BackendState {
                     eprintln!("[TITAN] Main thread waiting for rx.recv()...");
                     if let Ok(resp) = rx.recv_timeout(std::time::Duration::from_secs(10)) {
                         eprintln!("[TITAN] rx.recv() got response!");
-                        self.attached_pid = Some(0);
+                        unsafe {
+                            let pi = TitanGetProcessInformation();
+                            if !pi.is_null() && !(*pi).hProcess.is_null() {
+                                self.attached_pid = Some((*pi).dwProcessId as u64);
+                            }
+                        }
                         return resp;
                     } else {
                         eprintln!("[TITAN] rx.recv() TIMED OUT!");
@@ -342,50 +383,8 @@ impl BackendHandler for BackendState {
             }
 
             "regs" => {
-                // Get Context
-                unsafe {
-                    let rax = GetContextData(0);
-                    let rcx = GetContextData(1);
-                    let rdx = GetContextData(2);
-                    let rbx = GetContextData(3);
-                    let rsp = GetContextData(4);
-                    let rbp = GetContextData(5);
-                    let rsi = GetContextData(6);
-                    let rdi = GetContextData(7);
-                    let r8 = GetContextData(8);
-                    let r9 = GetContextData(9);
-                    let r10 = GetContextData(10);
-                    let r11 = GetContextData(11);
-                    let r12 = GetContextData(12);
-                    let r13 = GetContextData(13);
-                    let r14 = GetContextData(14);
-                    let r15 = GetContextData(15);
-                    let rip = GetContextData(16);
-
-                    let mut r = RegDump {
-                        arch: "x64".to_string(),
-                        registers: BTreeMap::new(),
-                    };
-                    r.registers.insert("rax".into(), hex_u64(rax as u64));
-                    r.registers.insert("rcx".into(), hex_u64(rcx as u64));
-                    r.registers.insert("rdx".into(), hex_u64(rdx as u64));
-                    r.registers.insert("rbx".into(), hex_u64(rbx as u64));
-                    r.registers.insert("rsp".into(), hex_u64(rsp as u64));
-                    r.registers.insert("rbp".into(), hex_u64(rbp as u64));
-                    r.registers.insert("rsi".into(), hex_u64(rsi as u64));
-                    r.registers.insert("rdi".into(), hex_u64(rdi as u64));
-                    r.registers.insert("r8".into(), hex_u64(r8 as u64));
-                    r.registers.insert("r9".into(), hex_u64(r9 as u64));
-                    r.registers.insert("r10".into(), hex_u64(r10 as u64));
-                    r.registers.insert("r11".into(), hex_u64(r11 as u64));
-                    r.registers.insert("r12".into(), hex_u64(r12 as u64));
-                    r.registers.insert("r13".into(), hex_u64(r13 as u64));
-                    r.registers.insert("r14".into(), hex_u64(r14 as u64));
-                    r.registers.insert("r15".into(), hex_u64(r15 as u64));
-                    r.registers.insert("rip".into(), hex_u64(rip as u64));
-                    
-                    RpcResponse::ok(0, serde_json::to_value(r).unwrap())
-                }
+                let ctx = LAST_CONTEXT.lock().unwrap();
+                RpcResponse::ok(0, serde_json::to_value(&*ctx).unwrap())
             }
 
             "disasm" => {
