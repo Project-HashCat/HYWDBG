@@ -27,4 +27,8 @@ target_link_libraries(hywdbg-qt PRIVATE Qt6::Widgets Qt6::Network)
 
 if (MSVC)
     target_compile_options(hywdbg-qt PRIVATE /W4 /permissive-)
+    target_compile_definitions(hywdbg-qt PRIVATE
+        _SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING=1
+        _HAS_DEPRECATED_STDEXT_ARR_ITERS=1
+    )
 endif()
