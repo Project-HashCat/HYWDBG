@@ -231,7 +231,7 @@ impl BackendHandler for BackendState {
                     eprintln!("[TITAN] Main thread waiting for rx.recv()...");
                     if let Ok(resp) = rx.recv_timeout(std::time::Duration::from_secs(10)) {
                         eprintln!("[TITAN] rx.recv() got response!");
-                        if let Some(val) = resp.value.as_ref() {
+                        if let Some(val) = resp.result.as_ref() {
                             if let Some(pid_val) = val.get("pid") {
                                 if let Some(pid) = pid_val.as_u64() {
                                     self.attached_pid = Some(pid);
