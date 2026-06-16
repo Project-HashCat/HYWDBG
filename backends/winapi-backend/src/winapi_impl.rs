@@ -27,7 +27,7 @@ use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     MODULEENTRY32W, TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32, TH32CS_SNAPTHREAD, THREADENTRY32,
 };
 use windows_sys::Win32::System::Threading::{
-    CreateProcessW, OpenProcess, OpenThread, DEBUG_ONLY_THIS_PROCESS, PROCESS_INFORMATION,
+    CreateProcessW, OpenProcess, OpenThread, CREATE_NEW_CONSOLE, DEBUG_ONLY_THIS_PROCESS, PROCESS_INFORMATION,
     PROCESS_QUERY_INFORMATION, PROCESS_VM_OPERATION, PROCESS_VM_READ, PROCESS_VM_WRITE,
     STARTUPINFOW, THREAD_GET_CONTEXT, THREAD_QUERY_INFORMATION, THREAD_SET_CONTEXT,
     THREAD_SUSPEND_RESUME,
@@ -568,7 +568,7 @@ impl BackendHandler for BackendState {
                         null(),
                         null(),
                         0,
-                        DEBUG_ONLY_THIS_PROCESS,
+                        DEBUG_ONLY_THIS_PROCESS | CREATE_NEW_CONSOLE,
                         null(),
                         null(),
                         &si,
