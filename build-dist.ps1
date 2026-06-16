@@ -161,6 +161,7 @@ if (-not $SkipQtBuild) {
             "-S", $qtSrc,
             "-B", $qtBuildDir,
             "-G", "Ninja",
+            "-DCMAKE_BUILD_TYPE=$Config",
             "-DCMAKE_PREFIX_PATH=$QtPrefix"
         )
         Invoke-CmdChecked "cmake configure" "cmake" $cmakeArgs
