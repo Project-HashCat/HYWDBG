@@ -189,7 +189,7 @@ impl BackendHandler for BackendState {
             }
 
             "attach" => {
-                let pid = param_u64(&params, "pid").unwrap_or(0) as u32;
+                let pid = params.as_ref().and_then(|p| p.get("pid")).and_then(|v| v.as_u64()).unwrap_or(0) as u32;
                 if pid == 0 {
                     return RpcResponse::err(0, "bad_params", "attach requires pid");
                 }
@@ -234,7 +234,7 @@ impl BackendHandler for BackendState {
                 if pid > 0 {
                     unsafe {
                         let h = OpenProcess(PROCESS_ALL_ACCESS, 0, pid as u32);
-                        if h != 0 {
+                        if !h.is_null() {
                             DebugBreakProcess(h);
                             windows_sys::Win32::Foundation::CloseHandle(h);
                         }
@@ -294,7 +294,7 @@ impl BackendHandler for BackendState {
             "readMem" => {
                 let addr_str = param_str(&params, "addr").unwrap_or_default();
                 let addr = u64::from_str_radix(addr_str.trim_start_matches("0x").trim_start_matches("0X"), 16).unwrap_or(0);
-                let size = param_u64(&params, "size").unwrap_or(0) as u32;
+                let size = params.as_ref().and_then(|p| p.get("size")).and_then(|v| v.as_u64()).unwrap_or(0) as u32;
                 
                 let mut buf = vec![0u8; size as usize];
                 let mut bytes_read: u64 = 0;
@@ -463,7 +463,7 @@ impl BackendHandler for BackendState {
                 for (pid, process) in sys.processes() {
                     procs.push(json!({
                         "pid": pid.as_u32(),
-                        "name": process.name().to_string_lossy(),
+                        "name": process.name().to_string(),
                         "arch": "x64",
                         "path": process.exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default()
                     }));
@@ -515,8 +515,10 @@ impl BackendHandler for BackendState {
                             me.dwSize = std::mem::size_of::<MODULEENTRY32>() as u32;
                             if Module32First(h, &mut me) != 0 {
                                 loop {
-                                    let name = String::from_utf8_lossy(&me.szModule).trim_matches('\0').to_string();
-                                    let path = String::from_utf8_lossy(&me.szExePath).trim_matches('\0').to_string();
+                                    let name_bytes = std::slice::from_raw_parts(me.szModule.as_ptr() as *const u8, 256);
+                                    let path_bytes = std::slice::from_raw_parts(me.szExePath.as_ptr() as *const u8, 260);
+                                    let name = String::from_utf8_lossy(name_bytes).trim_matches('\0').to_string();
+                                    let path = String::from_utf8_lossy(path_bytes).trim_matches('\0').to_string();
                                     modules.push(json!({
                                         "name": name,
                                         "base": format!("{:X}", me.modBaseAddr as usize),
