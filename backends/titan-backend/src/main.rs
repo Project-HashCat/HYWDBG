@@ -263,18 +263,19 @@ impl BackendHandler for BackendState {
                 // Read a chunk of memory (lines * 15 bytes max per x86 instruction)
                 let read_size = lines_req * 15;
                 let mut buf = vec![0u8; read_size];
-                let mut bytes_read: usize = 0;
+                let mut bytes_read: u64 = 0;
 
                 unsafe {
                     let pi = TitanGetProcessInformation();
                     if !pi.is_null() && !(*pi).hProcess.is_null() {
-                        MemoryReadSafe((*pi).hProcess, addr as *mut _, buf.as_mut_ptr() as *mut _, read_size, &mut bytes_read);
+                        MemoryReadSafe((*pi).hProcess, addr as *mut _, buf.as_mut_ptr() as *mut _, read_size as u64, &mut bytes_read);
                     }
                 }
 
-                if bytes_read > 0 {
+                let bytes_read_usize = bytes_read as usize;
+                if bytes_read_usize > 0 {
                     use iced_x86::{Decoder, DecoderOptions, Formatter, NasmFormatter, Instruction};
-                    let actual_bytes = &buf[..bytes_read];
+                    let actual_bytes = &buf[..bytes_read_usize];
                     let mut decoder = Decoder::with_ip(64, actual_bytes, addr, DecoderOptions::NONE);
                     let mut formatter = NasmFormatter::new();
                     let mut instruction = Instruction::default();
