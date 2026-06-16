@@ -81,7 +81,7 @@ struct BackendState {
     active_tid: Option<u32>,
     threads: HashMap<u32, HANDLE>,
     last_event: Option<(u32, u32)>,
-    continue_status: u32,
+    continue_status: i32,
     next_bp: u64,
     bps: HashMap<u64, Breakpoint>,
 }
@@ -95,7 +95,7 @@ impl Default for BackendState {
             active_tid: None,
             threads: HashMap::new(),
             last_event: None,
-            continue_status: windows_sys::Win32::System::Diagnostics::Debug::DBG_CONTINUE,
+            continue_status: windows_sys::Win32::Foundation::DBG_CONTINUE,
             next_bp: 1,
             bps: HashMap::new(),
         }
@@ -227,7 +227,7 @@ impl BackendState {
             self.pid = Some(ev.dwProcessId);
             self.active_tid = Some(ev.dwThreadId);
             self.last_event = Some((ev.dwProcessId, ev.dwThreadId));
-            self.continue_status = windows_sys::Win32::System::Diagnostics::Debug::DBG_CONTINUE;
+            self.continue_status = windows_sys::Win32::Foundation::DBG_CONTINUE;
 
             let mut kind = "unknown".to_string();
             let mut extra = json!({});
@@ -317,7 +317,7 @@ impl BackendState {
                         EXCEPTION_BREAKPOINT  => "breakpoint".into(),
                         EXCEPTION_SINGLE_STEP => "single_step".into(),
                         _ => {
-                            self.continue_status = windows_sys::Win32::System::Diagnostics::Debug::DBG_EXCEPTION_NOT_HANDLED;
+                            self.continue_status = windows_sys::Win32::Foundation::DBG_EXCEPTION_NOT_HANDLED;
                             "exception".into()
                         }
                     };
