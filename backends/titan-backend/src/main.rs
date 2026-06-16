@@ -33,9 +33,14 @@ fn c_str(s: &str) -> CString {
 }
 
 extern "system" fn cb_entry_point() {
-    // Reached entry point
     update_last_context();
+    let mut pid = 0;
+    unsafe {
+        let pi = TitanGetProcessInformation();
+        if !pi.is_null() { pid = (*pi).dwProcessId; }
+    }
     send_event_and_wait(json!({
+        "pid": pid,
         "stopped": true,
         "event": "breakpoint",
         "reason": "entry",
@@ -45,7 +50,13 @@ extern "system" fn cb_entry_point() {
 
 extern "system" fn cb_system_breakpoint() {
     update_last_context();
+    let mut pid = 0;
+    unsafe {
+        let pi = TitanGetProcessInformation();
+        if !pi.is_null() { pid = (*pi).dwProcessId; }
+    }
     send_event_and_wait(json!({
+        "pid": pid,
         "stopped": true,
         "event": "breakpoint",
         "reason": "system_bp",
@@ -54,9 +65,14 @@ extern "system" fn cb_system_breakpoint() {
 }
 
 extern "system" fn cb_custom_handler() {
-    // A breakpoint set by us
     update_last_context();
+    let mut pid = 0;
+    unsafe {
+        let pi = TitanGetProcessInformation();
+        if !pi.is_null() { pid = (*pi).dwProcessId; }
+    }
     send_event_and_wait(json!({
+        "pid": pid,
         "stopped": true,
         "event": "breakpoint",
         "reason": "go",
@@ -215,10 +231,11 @@ impl BackendHandler for BackendState {
                     eprintln!("[TITAN] Main thread waiting for rx.recv()...");
                     if let Ok(resp) = rx.recv_timeout(std::time::Duration::from_secs(10)) {
                         eprintln!("[TITAN] rx.recv() got response!");
-                        unsafe {
-                            let pi = TitanGetProcessInformation();
-                            if !pi.is_null() && !(*pi).hProcess.is_null() {
-                                self.attached_pid = Some((*pi).dwProcessId as u64);
+                        if let Some(val) = resp.value.as_ref() {
+                            if let Some(pid_val) = val.get("pid") {
+                                if let Some(pid) = pid_val.as_u64() {
+                                    self.attached_pid = Some(pid);
+                                }
                             }
                         }
                         return resp;
@@ -338,11 +355,14 @@ impl BackendHandler for BackendState {
                 let size = params.as_ref().and_then(|p| p.get("size")).and_then(|v| v.as_u64()).unwrap_or(0) as u32;
                 
                 let mut buf = vec![0u8; size as usize];
-                let mut bytes_read: u64 = 0;
-                unsafe {
-                    let pi = TitanGetProcessInformation();
-                    if !pi.is_null() && !(*pi).hProcess.is_null() {
-                        MemoryReadSafe((*pi).hProcess, addr as *mut _, buf.as_mut_ptr() as *mut _, size as u64, &mut bytes_read);
+                let mut bytes_read: usize = 0;
+                if let Some(pid) = self.attached_pid {
+                    unsafe {
+                        let h = OpenProcess(windows_sys::Win32::System::Threading::PROCESS_VM_READ, 0, pid as u32);
+                        if !h.is_null() {
+                            windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory(h, addr as *const _, buf.as_mut_ptr() as *mut _, size as usize, &mut bytes_read);
+                            windows_sys::Win32::Foundation::CloseHandle(h);
+                        }
                     }
                 }
                 
@@ -364,11 +384,14 @@ impl BackendHandler for BackendState {
                     }
                 }
                 
-                let mut bytes_written: u64 = 0;
-                unsafe {
-                    let pi = TitanGetProcessInformation();
-                    if !pi.is_null() && !(*pi).hProcess.is_null() {
-                        MemoryWriteSafe((*pi).hProcess, addr as *mut _, bytes.as_mut_ptr() as *mut _, bytes.len() as u64, &mut bytes_written);
+                let mut bytes_written: usize = 0;
+                if let Some(pid) = self.attached_pid {
+                    unsafe {
+                        let h = OpenProcess(windows_sys::Win32::System::Threading::PROCESS_VM_WRITE | windows_sys::Win32::System::Threading::PROCESS_VM_OPERATION, 0, pid as u32);
+                        if !h.is_null() {
+                            windows_sys::Win32::System::Diagnostics::Debug::WriteProcessMemory(h, addr as *const _, bytes.as_ptr() as *const _, bytes.len() as usize, &mut bytes_written);
+                            windows_sys::Win32::Foundation::CloseHandle(h);
+                        }
                     }
                 }
                 RpcResponse::ok(0, json!({ "success": bytes_written > 0 }))
@@ -407,12 +430,15 @@ impl BackendHandler for BackendState {
                 // Read a chunk of memory (lines * 15 bytes max per x86 instruction)
                 let read_size = lines_req * 15;
                 let mut buf = vec![0u8; read_size];
-                let mut bytes_read: u64 = 0;
+                let mut bytes_read: usize = 0;
 
-                unsafe {
-                    let pi = TitanGetProcessInformation();
-                    if !pi.is_null() && !(*pi).hProcess.is_null() {
-                        MemoryReadSafe((*pi).hProcess, addr as *mut _, buf.as_mut_ptr() as *mut _, read_size as u64, &mut bytes_read);
+                if let Some(pid) = self.attached_pid {
+                    unsafe {
+                        let h = OpenProcess(windows_sys::Win32::System::Threading::PROCESS_VM_READ, 0, pid as u32);
+                        if !h.is_null() {
+                            windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory(h, addr as *const _, buf.as_mut_ptr() as *mut _, read_size as usize, &mut bytes_read);
+                            windows_sys::Win32::Foundation::CloseHandle(h);
+                        }
                     }
                 }
 
@@ -551,29 +577,31 @@ impl BackendHandler for BackendState {
 
             "memoryMap" => {
                 let mut regions = Vec::new();
-                unsafe {
-                    let pi = TitanGetProcessInformation();
-                    if !pi.is_null() && !(*pi).hProcess.is_null() {
-                        let h_process = (*pi).hProcess;
-                        use windows_sys::Win32::System::Memory::{VirtualQueryEx, MEMORY_BASIC_INFORMATION};
-                        let mut addr = 0usize;
-                        let mut mbi: MEMORY_BASIC_INFORMATION = std::mem::zeroed();
-                        while VirtualQueryEx(h_process, addr as *const _, &mut mbi, std::mem::size_of::<MEMORY_BASIC_INFORMATION>()) != 0 {
-                            let protect = mbi.Protect;
-                            let state = mbi.State;
-                            let mut perms = String::new();
-                            if state == 0x1000 { // MEM_COMMIT
-                                perms.push(if (protect & 0x04) != 0 || (protect & 0x20) != 0 || (protect & 0x40) != 0 { 'r' } else { '-' });
-                                perms.push(if (protect & 0x04) != 0 || (protect & 0x40) != 0 { 'w' } else { '-' });
-                                perms.push(if (protect & 0x20) != 0 || (protect & 0x40) != 0 || (protect & 0x10) != 0 { 'x' } else { '-' });
-                                regions.push(json!({
-                                    "addr": format!("{:X}", mbi.BaseAddress as usize),
-                                    "size": mbi.RegionSize,
-                                    "perms": perms,
-                                    "desc": ""
-                                }));
+                if let Some(pid) = self.attached_pid {
+                    unsafe {
+                        let h_process = OpenProcess(windows_sys::Win32::System::Threading::PROCESS_QUERY_INFORMATION, 0, pid as u32);
+                        if !h_process.is_null() {
+                            use windows_sys::Win32::System::Memory::{VirtualQueryEx, MEMORY_BASIC_INFORMATION};
+                            let mut addr = 0usize;
+                            let mut mbi: MEMORY_BASIC_INFORMATION = std::mem::zeroed();
+                            while VirtualQueryEx(h_process, addr as *const _, &mut mbi, std::mem::size_of::<MEMORY_BASIC_INFORMATION>()) != 0 {
+                                let protect = mbi.Protect;
+                                let state = mbi.State;
+                                let mut perms = String::new();
+                                if state == 0x1000 { // MEM_COMMIT
+                                    perms.push(if (protect & 0x04) != 0 || (protect & 0x20) != 0 || (protect & 0x40) != 0 { 'r' } else { '-' });
+                                    perms.push(if (protect & 0x04) != 0 || (protect & 0x40) != 0 { 'w' } else { '-' });
+                                    perms.push(if (protect & 0x20) != 0 || (protect & 0x40) != 0 || (protect & 0x10) != 0 { 'x' } else { '-' });
+                                    regions.push(json!({
+                                        "addr": format!("{:X}", mbi.BaseAddress as usize),
+                                        "size": mbi.RegionSize,
+                                        "perms": perms,
+                                        "desc": ""
+                                    }));
+                                }
+                                addr = (mbi.BaseAddress as usize) + mbi.RegionSize;
                             }
-                            addr = (mbi.BaseAddress as usize) + mbi.RegionSize;
+                            windows_sys::Win32::Foundation::CloseHandle(h_process);
                         }
                     }
                 }
