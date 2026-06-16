@@ -344,7 +344,6 @@ void MainWindow::buildToolBar()
     auto* srBtn  = mkBtn(QStringLiteral("SR (F9)"));
     tb->addSeparator();
 
-    auto* refBtn  = mkBtn(QStringLiteral("Refresh"));
     auto* procBtn = mkBtn(QStringLiteral("Proc"));
 
     connect(launchBtn, &QPushButton::clicked, this, [this]() {
@@ -362,7 +361,6 @@ void MainWindow::buildToolBar()
     connect(siBtn,     &QPushButton::clicked, this, [this]() { runCommand(QStringLiteral("si")); });
     connect(soBtn,     &QPushButton::clicked, this, [this]() { runCommand(QStringLiteral("so")); });
     connect(srBtn,     &QPushButton::clicked, this, [this]() { runCommand(QStringLiteral("sout")); });
-    connect(refBtn,    &QPushButton::clicked, this, [this]() { refreshAll(); });
     connect(procBtn,   &QPushButton::clicked, this, [this]() { runCommand(QStringLiteral("proc")); });
 }
 

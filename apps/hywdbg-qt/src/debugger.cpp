@@ -160,7 +160,7 @@ void MainWindow::refreshMemoryMap()
 void MainWindow::refreshAll()
 {
     refreshRegs();
-    // if (!rip.isEmpty()) refreshDisasm(rip); // Disabled as requested by user
+    if (!rip.isEmpty()) refreshDisasm(rip);
     refreshModules();
     refreshMemoryMap();
     refreshThreads();
