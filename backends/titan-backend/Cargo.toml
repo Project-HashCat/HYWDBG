@@ -13,3 +13,4 @@ hywdbg-protocol = { path = "../../crates/hywdbg-protocol" }
 hywdbg-backend-common = { path = "../../crates/hywdbg-backend-common" }
 titanengine-sys = { path = "../../crates/titanengine-sys" }
 lazy_static = "1.5.0"
+sysinfo = "0.30"

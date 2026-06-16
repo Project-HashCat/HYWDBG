@@ -310,6 +310,22 @@ impl BackendHandler for BackendState {
                 RpcResponse::ok(0, json!({ "lines": lines_out }))
             }
             
+            "processList" => {
+                let mut sys = sysinfo::System::new_all();
+                sys.refresh_processes();
+                
+                let mut procs = Vec::new();
+                for (pid, process) in sys.processes() {
+                    procs.push(json!({
+                        "pid": pid.as_u32(),
+                        "name": process.name().to_string_lossy(),
+                        "arch": "x64",
+                        "path": process.exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default()
+                    }));
+                }
+                RpcResponse::ok(0, json!(procs))
+            }
+            
             "shutdown" => {
                 std::process::exit(0);
             }

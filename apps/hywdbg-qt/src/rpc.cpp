@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include <QElapsedTimer>
 
 void MainWindow::startDaemon()
 {
@@ -126,11 +127,28 @@ QJsonValue MainWindow::rpc(const QString& method, const QJsonObject& params)
     rpcSocket->waitForBytesWritten(2000);
 
     QByteArray response;
+    QElapsedTimer timer;
+    timer.start();
+    
+    // For long-running commands like go/launch, we wait much longer or indefinitely
+    // But we don't want to freeze the UI, so we use processEvents
+    int timeoutMs = 60000; // 60 seconds timeout
+    if (method == QStringLiteral("dbg.go") || method == QStringLiteral("dbg.launch")) {
+        timeoutMs = 3600000; // 1 hour for debugging
+    }
+    
     while (true) {
-        if (!rpcSocket->waitForReadyRead(5000))
-            throw std::runtime_error("RPC timeout");
-        response += rpcSocket->readLine();
-        if (response.endsWith('\n')) break;
+        if (rpcSocket->waitForReadyRead(100)) {
+            response += rpcSocket->readLine();
+            if (response.endsWith('\n')) break;
+        } else {
+            QCoreApplication::processEvents();
+            if (timer.elapsed() > timeoutMs) {
+                // If we timed out, we must discard this socket because the next response will be out of sync
+                rpcSocket->abort();
+                throw std::runtime_error("RPC timeout");
+            }
+        }
     }
 
     QJsonParseError pe;
