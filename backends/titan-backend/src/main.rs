@@ -1,13 +1,12 @@
-use hywdbg_backend_common::{param_str, param_u64, run_stdio_backend, BackendHandler};
+use hywdbg_backend_common::{param_str, run_stdio_backend, BackendHandler};
 use hywdbg_protocol::{
-    hex_u64, BackendCapabilities, BreakpointRecord, DisasmLine, MemoryBlock, ModuleInfo, ProcessListEntry,
-    RegDump, RpcResponse, StackFrame, ThreadInfo, WatchpointInfo,
+    hex_u64, BackendCapabilities, RegDump, RpcResponse
 };
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::ffi::CString;
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::thread;
 
 // TitanEngine sys crate
@@ -107,16 +106,16 @@ impl BackendHandler for BackendState {
             })),
             
             "capabilities" => RpcResponse::ok(0, serde_json::to_value(BackendCapabilities {
-                can_launch: true,
-                can_attach: true,
-                has_registers: true,
-                has_memory: true,
-                has_disasm: true,
-                has_breakpoints: true,
-                has_watchpoints: true,
-                has_threads: true,
-                has_modules: true,
-                has_callstack: true,
+                name: BACKEND_NAME.into(),
+                version: env!("CARGO_PKG_VERSION").into(),
+                backend_kind: BACKEND_KIND.into(),
+                supported_arches: vec!["x64".into()],
+                features: vec![
+                    "launch".into(),
+                    "attach".into(),
+                    "go".into(),
+                    "regs".into(),
+                ],
             }).unwrap()),
 
             "launch" => {
@@ -196,7 +195,11 @@ impl BackendHandler for BackendState {
                     let r15 = GetContextData(15);
                     let rip = GetContextData(16);
 
-                    let mut r = RegDump::default();
+                    let mut r = RegDump {
+                        gpr: HashMap::new(),
+                        fpr: HashMap::new(),
+                        flags: HashMap::new(),
+                    };
                     r.gpr.insert("rax".into(), hex_u64(rax as u64));
                     r.gpr.insert("rcx".into(), hex_u64(rcx as u64));
                     r.gpr.insert("rdx".into(), hex_u64(rdx as u64));
