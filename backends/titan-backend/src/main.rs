@@ -244,7 +244,69 @@ impl BackendHandler for BackendState {
             }
 
             "disasm" => {
-                RpcResponse::ok(0, json!({ "lines": [] }))
+                let mut addr_str = param_str(&params, "addr").unwrap_or_default();
+                let mut addr = get_rip();
+                if !addr_str.is_empty() {
+                    let clean = addr_str.trim_start_matches("0x").trim_start_matches("0X");
+                    if let Ok(a) = u64::from_str_radix(clean, 16) {
+                        addr = a;
+                    }
+                }
+                
+                let lines_req = params.as_ref()
+                    .and_then(|p| p.get("lines"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(20) as usize;
+
+                let mut lines_out = Vec::new();
+
+                // Read a chunk of memory (lines * 15 bytes max per x86 instruction)
+                let read_size = lines_req * 15;
+                let mut buf = vec![0u8; read_size];
+                let mut bytes_read: usize = 0;
+
+                unsafe {
+                    let pi = TitanGetProcessInformation();
+                    if !pi.is_null() && !(*pi).hProcess.is_null() {
+                        MemoryReadSafe((*pi).hProcess, addr as *mut _, buf.as_mut_ptr() as *mut _, read_size, &mut bytes_read);
+                    }
+                }
+
+                if bytes_read > 0 {
+                    use iced_x86::{Decoder, DecoderOptions, Formatter, NasmFormatter, Instruction};
+                    let actual_bytes = &buf[..bytes_read];
+                    let mut decoder = Decoder::with_ip(64, actual_bytes, addr, DecoderOptions::NONE);
+                    let mut formatter = NasmFormatter::new();
+                    let mut instruction = Instruction::default();
+                    let mut output = String::new();
+
+                    while decoder.can_decode() && lines_out.len() < lines_req {
+                        decoder.decode_out(&mut instruction);
+                        output.clear();
+                        formatter.format(&instruction, &mut output);
+                        
+                        let start_idx = (instruction.ip() - addr) as usize;
+                        let end_idx = start_idx + instruction.len();
+                        
+                        let hex_str = if end_idx <= actual_bytes.len() {
+                            actual_bytes[start_idx..end_idx]
+                                .iter()
+                                .map(|b| format!("{:02X}", b))
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        } else {
+                            "??".to_string()
+                        };
+
+                        lines_out.push(json!({
+                            "addr": hex_u64(instruction.ip()),
+                            "bytes": hex_str,
+                            "text": output.clone()
+                        }));
+                    }
+                }
+
+                RpcResponse::ok(0, json!({ "lines": lines_out }))
             }
             
             "shutdown" => {
