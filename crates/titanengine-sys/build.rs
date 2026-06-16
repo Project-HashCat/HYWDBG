@@ -11,7 +11,7 @@ fn main() {
     let root_dir = PathBuf::from(&manifest_dir).parent().unwrap().parent().unwrap().to_path_buf();
     
     // Link search path
-    println!("cargo:rustc-link-search=native={}", root_dir.display());
+    println!("cargo:rustc-link-search=native={}/deps_titan/prebuilt", root_dir.display());
     
     let target = env::var("TARGET").unwrap();
     if target.contains("x86_64") {
