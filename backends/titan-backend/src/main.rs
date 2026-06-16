@@ -3,7 +3,7 @@ use hywdbg_protocol::{
     hex_u64, BackendCapabilities, RegDump, RpcResponse
 };
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::CString;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Mutex;
@@ -196,27 +196,26 @@ impl BackendHandler for BackendState {
                     let rip = GetContextData(16);
 
                     let mut r = RegDump {
-                        gpr: HashMap::new(),
-                        fpr: HashMap::new(),
-                        flags: HashMap::new(),
+                        arch: "x64".to_string(),
+                        registers: BTreeMap::new(),
                     };
-                    r.gpr.insert("rax".into(), hex_u64(rax as u64));
-                    r.gpr.insert("rcx".into(), hex_u64(rcx as u64));
-                    r.gpr.insert("rdx".into(), hex_u64(rdx as u64));
-                    r.gpr.insert("rbx".into(), hex_u64(rbx as u64));
-                    r.gpr.insert("rsp".into(), hex_u64(rsp as u64));
-                    r.gpr.insert("rbp".into(), hex_u64(rbp as u64));
-                    r.gpr.insert("rsi".into(), hex_u64(rsi as u64));
-                    r.gpr.insert("rdi".into(), hex_u64(rdi as u64));
-                    r.gpr.insert("r8".into(), hex_u64(r8 as u64));
-                    r.gpr.insert("r9".into(), hex_u64(r9 as u64));
-                    r.gpr.insert("r10".into(), hex_u64(r10 as u64));
-                    r.gpr.insert("r11".into(), hex_u64(r11 as u64));
-                    r.gpr.insert("r12".into(), hex_u64(r12 as u64));
-                    r.gpr.insert("r13".into(), hex_u64(r13 as u64));
-                    r.gpr.insert("r14".into(), hex_u64(r14 as u64));
-                    r.gpr.insert("r15".into(), hex_u64(r15 as u64));
-                    r.gpr.insert("rip".into(), hex_u64(rip as u64));
+                    r.registers.insert("rax".into(), hex_u64(rax as u64));
+                    r.registers.insert("rcx".into(), hex_u64(rcx as u64));
+                    r.registers.insert("rdx".into(), hex_u64(rdx as u64));
+                    r.registers.insert("rbx".into(), hex_u64(rbx as u64));
+                    r.registers.insert("rsp".into(), hex_u64(rsp as u64));
+                    r.registers.insert("rbp".into(), hex_u64(rbp as u64));
+                    r.registers.insert("rsi".into(), hex_u64(rsi as u64));
+                    r.registers.insert("rdi".into(), hex_u64(rdi as u64));
+                    r.registers.insert("r8".into(), hex_u64(r8 as u64));
+                    r.registers.insert("r9".into(), hex_u64(r9 as u64));
+                    r.registers.insert("r10".into(), hex_u64(r10 as u64));
+                    r.registers.insert("r11".into(), hex_u64(r11 as u64));
+                    r.registers.insert("r12".into(), hex_u64(r12 as u64));
+                    r.registers.insert("r13".into(), hex_u64(r13 as u64));
+                    r.registers.insert("r14".into(), hex_u64(r14 as u64));
+                    r.registers.insert("r15".into(), hex_u64(r15 as u64));
+                    r.registers.insert("rip".into(), hex_u64(rip as u64));
                     
                     RpcResponse::ok(0, serde_json::to_value(r).unwrap())
                 }
