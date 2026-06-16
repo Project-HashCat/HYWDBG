@@ -332,6 +332,7 @@ impl BackendHandler for BackendState {
                 }
                 RpcResponse::ok(0, json!({ "success": bytes_written > 0 }))
             }
+            "kill" | "detach" => {
                 if let Some(tx) = CMD_TX.lock().unwrap().as_ref() {
                     let _ = tx.send(method.to_string());
                 }
