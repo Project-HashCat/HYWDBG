@@ -18,7 +18,7 @@ const BACKEND_NAME: &str = "HYWDbg TitanEngine Backend (Real)";
 use lazy_static::lazy_static;
 use windows_sys::Win32::System::Diagnostics::Debug::DebugBreakProcess;
 use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_ALL_ACCESS};
-use windows_sys::Win32::Foundation::HANDLE;
+use windows_sys::Win32::Foundation::CloseHandle;
 
 lazy_static! {
     static ref EVENT_TX: Mutex<Option<Sender<RpcResponse>>> = Mutex::new(None);
@@ -396,7 +396,7 @@ impl BackendHandler for BackendState {
                     if let Some(pid) = self.attached_pid {
                         unsafe {
                             let h = windows_sys::Win32::System::Threading::OpenProcess(windows_sys::Win32::System::Threading::PROCESS_VM_READ, 0, pid as u32);
-                            if h != 0 {
+                            if !h.is_null() {
                                 windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory(h, addr as *const _, buf.as_mut_ptr() as *mut _, size as usize, &mut bytes_read);
                                 windows_sys::Win32::Foundation::CloseHandle(h);
                             }
@@ -432,7 +432,7 @@ impl BackendHandler for BackendState {
                     if let Some(pid) = self.attached_pid {
                         unsafe {
                             let h = windows_sys::Win32::System::Threading::OpenProcess(windows_sys::Win32::System::Threading::PROCESS_VM_WRITE | windows_sys::Win32::System::Threading::PROCESS_VM_OPERATION, 0, pid as u32);
-                            if h != 0 {
+                            if !h.is_null() {
                                 windows_sys::Win32::System::Diagnostics::Debug::WriteProcessMemory(h, addr as *const _, bytes.as_ptr() as *const _, bytes.len() as usize, &mut bytes_written);
                                 windows_sys::Win32::Foundation::CloseHandle(h);
                             }
@@ -486,7 +486,7 @@ impl BackendHandler for BackendState {
                     if let Some(pid) = self.attached_pid {
                         unsafe {
                             let h = windows_sys::Win32::System::Threading::OpenProcess(windows_sys::Win32::System::Threading::PROCESS_VM_READ, 0, pid as u32);
-                            if h != 0 {
+                            if !h.is_null() {
                                 windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory(h, addr as *const _, buf.as_mut_ptr() as *mut _, read_size as usize, &mut bytes_read);
                                 windows_sys::Win32::Foundation::CloseHandle(h);
                             }
