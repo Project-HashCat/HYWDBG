@@ -1,6 +1,6 @@
-use hywdbg_backend_common::{param_str, run_stdio_backend, BackendHandler};
+use hywdbg_backend_common::{param_str, param_u64, BackendHandler};
 use hywdbg_protocol::{
-    hex_u64, BackendCapabilities, RegDump, RpcResponse
+    hex_u64, BackendCapabilities, DisasmLine, RegDump, RpcResponse
 };
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
@@ -18,7 +18,7 @@ const BACKEND_NAME: &str = "HYWDbg TitanEngine Backend (Real)";
 use lazy_static::lazy_static;
 use windows_sys::Win32::System::Diagnostics::Debug::DebugBreakProcess;
 use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_ALL_ACCESS};
-use windows_sys::Win32::Foundation::CloseHandle;
+use windows_sys::Win32::Foundation::{CloseHandle, GetLastError};
 
 lazy_static! {
     static ref EVENT_TX: Mutex<Option<Sender<RpcResponse>>> = Mutex::new(None);
@@ -456,30 +456,37 @@ impl BackendHandler for BackendState {
             }
 
             "disasm" => {
-                let addr_str = param_str(&params, "addr").unwrap_or_default();
-                let mut addr = get_rip();
-                if !addr_str.is_empty() {
-                    let clean = addr_str.trim_start_matches("0x").trim_start_matches("0X");
-                    if let Ok(a) = u64::from_str_radix(clean, 16) {
-                        addr = a;
-                    }
+                let addr = match param_u64(&params, "addr") {
+                    Ok(Some(a)) => a,
+                    Ok(None) => get_rip(),
+                    Err(e) => return RpcResponse::err(0, "bad_params", format!("invalid disasm addr: {e}")),
+                };
+
+                let count = match param_u64(&params, "count") {
+                    Ok(Some(c)) => c,
+                    Ok(None) => match param_u64(&params, "lines") {
+                        Ok(Some(c)) => c,
+                        Ok(None) => 20,
+                        Err(e) => return RpcResponse::err(0, "bad_params", format!("invalid disasm lines: {e}")),
+                    },
+                    Err(e) => return RpcResponse::err(0, "bad_params", format!("invalid disasm count: {e}")),
                 }
-                
-                let lines_req = params.as_ref()
-                    .and_then(|p| p.get("lines"))
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(20) as usize;
+                .clamp(1, 96) as usize;
 
                 let mut lines_out = Vec::new();
 
                 // Read a chunk of memory (lines * 15 bytes max per x86 instruction)
-                let read_size = lines_req * 15;
+                let read_size = count * 16;
                 let mut buf = vec![0u8; read_size];
                 let mut bytes_read: usize = 0;
+                let mut last_error = 0u32;
 
                 if let Some(h) = self.attached_hprocess {
                     unsafe {
-                        windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory(h, addr as *const _, buf.as_mut_ptr() as *mut _, read_size as usize, &mut bytes_read);
+                        let ok = windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory(h, addr as *const _, buf.as_mut_ptr() as *mut _, read_size, &mut bytes_read);
+                        if ok == 0 {
+                            last_error = GetLastError();
+                        }
                     }
                 }
                 if bytes_read == 0 {
@@ -487,55 +494,54 @@ impl BackendHandler for BackendState {
                         unsafe {
                             let h = windows_sys::Win32::System::Threading::OpenProcess(windows_sys::Win32::System::Threading::PROCESS_VM_READ, 0, pid as u32);
                             if !h.is_null() {
-                                windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory(h, addr as *const _, buf.as_mut_ptr() as *mut _, read_size as usize, &mut bytes_read);
+                                let ok = windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory(h, addr as *const _, buf.as_mut_ptr() as *mut _, read_size, &mut bytes_read);
+                                if ok == 0 {
+                                    last_error = GetLastError();
+                                }
                                 windows_sys::Win32::Foundation::CloseHandle(h);
+                            } else {
+                                last_error = GetLastError();
                             }
                         }
                     }
                 }
+                if bytes_read == 0 {
+                    eprintln!("[TITAN] disasm ReadProcessMemory failed: addr={} size={} pid={:?} last_error={}", hex_u64(addr), read_size, self.attached_pid, last_error);
+                }
 
                 let bytes_read_usize = bytes_read as usize;
                 if bytes_read_usize > 0 {
-                    use iced_x86::{Decoder, DecoderOptions, Formatter, NasmFormatter, Instruction};
+                    use iced_x86::{Decoder, DecoderOptions, Formatter, Instruction, NasmFormatter};
                     let actual_bytes = &buf[..bytes_read_usize];
                     let mut decoder = Decoder::with_ip(64, actual_bytes, addr, DecoderOptions::NONE);
                     let mut formatter = NasmFormatter::new();
                     let mut instruction = Instruction::default();
                     let mut output = String::new();
 
-                    while decoder.can_decode() && lines_out.len() < lines_req {
+                    while decoder.can_decode() && lines_out.len() < count {
                         decoder.decode_out(&mut instruction);
+                        if instruction.is_invalid() {
+                            break;
+                        }
                         output.clear();
                         formatter.format(&instruction, &mut output);
-                        
+
                         let start_idx = (instruction.ip() - addr) as usize;
                         let end_idx = start_idx + instruction.len();
-                        
-                        let hex_str = if end_idx <= actual_bytes.len() {
-                            actual_bytes[start_idx..end_idx]
-                                .iter()
-                                .map(|b| format!("{:02X}", b))
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                        } else {
-                            "??".to_string()
-                        };
 
-                        lines_out.push(json!({
-                            "addr": hex_u64(instruction.ip()),
-                            "bytes": hex_str,
-                            "text": output.clone()
-                        }));
+                        let bytes = if end_idx <= actual_bytes.len() { actual_bytes[start_idx..end_idx].iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join("") } else { String::new() };
+
+                        lines_out.push(DisasmLine { addr: hex_u64(instruction.ip()), bytes, text: output.clone() });
                     }
                 }
 
-                RpcResponse::ok(0, json!({ "lines": lines_out }))
+                RpcResponse::ok(0, lines_out)
             }
-            
+
             "processList" => {
                 let mut sys = sysinfo::System::new_all();
                 sys.refresh_processes();
-                
+
                 let mut procs = Vec::new();
                 for (pid, process) in sys.processes() {
                     procs.push(json!({
