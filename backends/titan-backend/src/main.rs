@@ -238,9 +238,12 @@ impl BackendHandler for BackendState {
                             DebugLoop();
                         }
                         eprintln!("[TITAN] DebugLoop exited or InitDebugEx failed!");
-                        // send an error event so the main thread wakes up
                         if let Some(tx) = EVENT_TX.lock().unwrap().as_ref() {
-                            let _ = tx.send(RpcResponse::err(0, "launch_failed", "DebugLoop exited immediately"));
+                            let _ = tx.send(RpcResponse::ok(0, serde_json::json!({
+                                "stopped": true,
+                                "event": "exit_process",
+                                "exitCode": 0
+                            })));
                         }
                     }
                 });
@@ -298,12 +301,6 @@ impl BackendHandler for BackendState {
                         } else {
                             eprintln!("[TITAN] AttachDebugger failed!");
                             if let Some(tx) = EVENT_TX.lock().unwrap().as_ref() {
-                                let _ = tx.send(RpcResponse::err(0, "attach_failed", "AttachDebugger failed"));
-                            }
-                        }
-                    }
-                });
-
                 if let Some(rx) = self.ev_rx.as_ref() {
                     if let Ok(resp) = rx.recv_timeout(std::time::Duration::from_secs(10)) {
                         return resp;
@@ -386,6 +383,17 @@ impl BackendHandler for BackendState {
                         windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory(h, addr as *const _, buf.as_mut_ptr() as *mut _, size as usize, &mut bytes_read);
                     }
                 }
+                if bytes_read == 0 {
+                    if let Some(pid) = self.attached_pid {
+                        unsafe {
+                            let h = windows_sys::Win32::System::Threading::OpenProcess(windows_sys::Win32::System::Threading::PROCESS_VM_READ, 0, pid as u32);
+                            if h != 0 {
+                                windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory(h, addr as *const _, buf.as_mut_ptr() as *mut _, size as usize, &mut bytes_read);
+                                windows_sys::Win32::Foundation::CloseHandle(h);
+                            }
+                        }
+                    }
+                }
                 
                 let hex = buf[..bytes_read as usize].iter().map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join("");
                 RpcResponse::ok(0, json!(hex))
@@ -409,6 +417,17 @@ impl BackendHandler for BackendState {
                 if let Some(h) = self.attached_hprocess {
                     unsafe {
                         windows_sys::Win32::System::Diagnostics::Debug::WriteProcessMemory(h, addr as *const _, bytes.as_ptr() as *const _, bytes.len() as usize, &mut bytes_written);
+                    }
+                }
+                if bytes_written == 0 {
+                    if let Some(pid) = self.attached_pid {
+                        unsafe {
+                            let h = windows_sys::Win32::System::Threading::OpenProcess(windows_sys::Win32::System::Threading::PROCESS_VM_WRITE | windows_sys::Win32::System::Threading::PROCESS_VM_OPERATION, 0, pid as u32);
+                            if h != 0 {
+                                windows_sys::Win32::System::Diagnostics::Debug::WriteProcessMemory(h, addr as *const _, bytes.as_ptr() as *const _, bytes.len() as usize, &mut bytes_written);
+                                windows_sys::Win32::Foundation::CloseHandle(h);
+                            }
+                        }
                     }
                 }
                 RpcResponse::ok(0, json!({ "success": bytes_written > 0 }))
@@ -452,6 +471,17 @@ impl BackendHandler for BackendState {
                 if let Some(h) = self.attached_hprocess {
                     unsafe {
                         windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory(h, addr as *const _, buf.as_mut_ptr() as *mut _, read_size as usize, &mut bytes_read);
+                    }
+                }
+                if bytes_read == 0 {
+                    if let Some(pid) = self.attached_pid {
+                        unsafe {
+                            let h = windows_sys::Win32::System::Threading::OpenProcess(windows_sys::Win32::System::Threading::PROCESS_VM_READ, 0, pid as u32);
+                            if h != 0 {
+                                windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory(h, addr as *const _, buf.as_mut_ptr() as *mut _, read_size as usize, &mut bytes_read);
+                                windows_sys::Win32::Foundation::CloseHandle(h);
+                            }
+                        }
                     }
                 }
 
@@ -711,6 +741,21 @@ fn main() -> anyhow::Result<()> {
 
         if let Some(rx) = state.ev_rx.as_ref() {
             if let Ok(mut resp) = rx.try_recv() {
+                if let Some(val) = resp.result.as_ref() {
+                    if let Some(pid_val) = val.get("pid") {
+                        if let Some(pid) = pid_val.as_u64() {
+                            state.attached_pid = Some(pid);
+                        }
+                    }
+                    if let Some(hproc_val) = val.get("hProcess") {
+                        if let Some(hproc) = hproc_val.as_u64() {
+                            if hproc != 0 {
+                                state.attached_hprocess = Some(hproc as windows_sys::Win32::Foundation::HANDLE);
+                            }
+                        }
+                    }
+                }
+
                 if let Some(id) = pending_cmd.take() {
                     resp.id = id;
                     if let Ok(encoded) = serde_json::to_string(&resp) {
