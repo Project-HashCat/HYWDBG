@@ -301,6 +301,15 @@ impl BackendHandler for BackendState {
                         } else {
                             eprintln!("[TITAN] AttachDebugger failed!");
                             if let Some(tx) = EVENT_TX.lock().unwrap().as_ref() {
+                                let _ = tx.send(RpcResponse::ok(0, serde_json::json!({
+                                    "stopped": true,
+                                    "event": "exit_process",
+                                    "exitCode": 0
+                                })));
+                            }
+                        }
+                    }
+                });
                 if let Some(rx) = self.ev_rx.as_ref() {
                     if let Ok(resp) = rx.recv_timeout(std::time::Duration::from_secs(10)) {
                         return resp;
