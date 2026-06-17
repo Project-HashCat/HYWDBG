@@ -132,6 +132,10 @@ fn update_last_context() {
     *LAST_CONTEXT.lock().unwrap() = r;
 }
 
+fn current_exit_code() -> u64 {
+    unsafe { GetExitCode() as u32 as u64 }
+}
+
 fn send_event_and_wait(value: Value) {
     if let Some(tx) = EVENT_TX.lock().unwrap().as_ref() {
         let _ = tx.send(RpcResponse::ok(0, value));
@@ -242,7 +246,7 @@ impl BackendHandler for BackendState {
                             let _ = tx.send(RpcResponse::ok(0, serde_json::json!({
                                 "stopped": true,
                                 "event": "exit_process",
-                                "exitCode": 0
+                                "exitCode": current_exit_code()
                             })));
                         }
                     }
@@ -304,7 +308,7 @@ impl BackendHandler for BackendState {
                                 let _ = tx.send(RpcResponse::ok(0, serde_json::json!({
                                     "stopped": true,
                                     "event": "exit_process",
-                                    "exitCode": 0
+                                    "exitCode": current_exit_code()
                                 })));
                             }
                         }
@@ -342,7 +346,7 @@ impl BackendHandler for BackendState {
                         return resp;
                     }
                 }
-                RpcResponse::ok(0, json!({ "stopped": true, "event": "exit_process", "exitCode": 0 }))
+                RpcResponse::ok(0, json!({ "stopped": true, "event": "exit_process", "exitCode": current_exit_code() }))
             }
 
             "stepInto" | "stepOver" | "stepOut" => {
@@ -355,7 +359,7 @@ impl BackendHandler for BackendState {
                         return resp;
                     }
                 }
-                RpcResponse::ok(0, json!({ "stopped": true, "event": "exit_process", "exitCode": 0 }))
+                RpcResponse::ok(0, json!({ "stopped": true, "event": "exit_process", "exitCode": current_exit_code() }))
             }
 
             "bpSet" => {
