@@ -253,8 +253,7 @@ void MainWindow::formatEventDetail(const QJsonObject& res)
         QString addr = res.contains(QStringLiteral("pc")) ? res[QStringLiteral("pc")].toVariant().toString() : res[QStringLiteral("address")].toVariant().toString();
         log(QStringLiteral("Breakpoint reached at ") + fmtAddr(addr), LogKind::Ok);
     } else if (ev == QStringLiteral("single_step")) {
-        QString addr = res.contains(QStringLiteral("pc")) ? res[QStringLiteral("pc")].toVariant().toString() : res[QStringLiteral("address")].toVariant().toString();
-        log(QStringLiteral("Single step at ") + fmtAddr(addr), LogKind::Ok);
+        // Single-step commands update the UI state below; don't spam the command log.
     } else if (ev == QStringLiteral("exception")) {
         bool fc = res[QStringLiteral("first_chance")].toBool(true);
         QString desc = res[QStringLiteral("description")].toVariant().toString();
@@ -300,4 +299,3 @@ void MainWindow::formatEventDetail(const QJsonObject& res)
         setDebugState(QStringLiteral("pause"), details);
     }
 }
-

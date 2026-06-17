@@ -95,6 +95,27 @@ extern "system" fn cb_custom_handler() {
     }));
 }
 
+extern "system" fn cb_step_handler() {
+    update_last_context();
+    let mut pid = 0;
+    let mut h_process = 0;
+    unsafe {
+        let pi = TitanGetProcessInformation();
+        if !pi.is_null() {
+            pid = (*pi).dwProcessId;
+            h_process = (*pi).hProcess as usize;
+        }
+    }
+    send_event_and_wait(json!({
+        "pid": pid,
+        "hProcess": h_process,
+        "stopped": true,
+        "event": "single_step",
+        "reason": "step",
+        "pc": hex_u64(get_rip())
+    }));
+}
+
 fn get_rip() -> u64 {
     let ctx = LAST_CONTEXT.lock().unwrap();
     if let Some(rip_str) = ctx.registers.get("rip") {
@@ -147,13 +168,13 @@ fn send_event_and_wait(value: Value) {
             if cmd == "go" {
                 break;
             } else if cmd == "stepInto" {
-                unsafe { StepInto(cb_custom_handler as *mut _) };
+                unsafe { StepInto(cb_step_handler as *mut _) };
                 break;
             } else if cmd == "stepOver" {
-                unsafe { StepOver(cb_custom_handler as *mut _) };
+                unsafe { StepOver(cb_step_handler as *mut _) };
                 break;
             } else if cmd == "stepOut" {
-                unsafe { StepOut(cb_custom_handler as *mut _, false) };
+                unsafe { StepOut(cb_step_handler as *mut _, false) };
                 break;
             } else if cmd == "detach" || cmd == "kill" {
                 unsafe { StopDebug() };
