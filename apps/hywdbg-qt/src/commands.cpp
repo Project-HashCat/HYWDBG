@@ -1,4 +1,57 @@
 #include "mainwindow.h"
+#include <QFile>
+#include <QMessageBox>
+
+namespace {
+
+bool isPe64Executable(const QString& path, QString* error)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        if (error) *error = file.errorString();
+        return false;
+    }
+
+    QByteArray data = file.read(0x1000);
+    const auto readU16 = [&data](qsizetype off) -> quint16 {
+        return static_cast<quint8>(data[off])
+             | (static_cast<quint16>(static_cast<quint8>(data[off + 1])) << 8);
+    };
+    const auto readU32 = [&data](qsizetype off) -> quint32 {
+        return static_cast<quint8>(data[off])
+             | (static_cast<quint32>(static_cast<quint8>(data[off + 1])) << 8)
+             | (static_cast<quint32>(static_cast<quint8>(data[off + 2])) << 16)
+             | (static_cast<quint32>(static_cast<quint8>(data[off + 3])) << 24);
+    };
+
+    if (data.size() < 0x40 || readU16(0) != 0x5A4D) {
+        if (error) *error = QStringLiteral("not a PE executable");
+        return false;
+    }
+
+    quint32 peOffset = readU32(0x3C);
+    if (peOffset > 0x100000) {
+        if (error) *error = QStringLiteral("invalid PE header offset");
+        return false;
+    }
+
+    if (data.size() < static_cast<qsizetype>(peOffset + 6)) {
+        file.seek(peOffset);
+        data = file.read(6);
+        peOffset = 0;
+    }
+
+    if (data.size() < static_cast<qsizetype>(peOffset + 6)
+        || data.mid(peOffset, 4) != QByteArrayLiteral("PE\0\0")) {
+        if (error) *error = QStringLiteral("invalid PE signature");
+        return false;
+    }
+
+    constexpr quint16 kMachineAmd64 = 0x8664;
+    return readU16(peOffset + 4) == kMachineAmd64;
+}
+
+} // namespace
 
 void MainWindow::runCommand(const QString& line)
 {
@@ -27,6 +80,17 @@ void MainWindow::runCommand(const QString& line)
                 exe = QFileDialog::getOpenFileName(this, QStringLiteral("Launch"), QString(),
                                                    QStringLiteral("Executables (*.exe);;All Files (*)"));
                 if (exe.isEmpty()) return;
+            }
+            QString peError;
+            if (!isPe64Executable(exe, &peError)) {
+                QMessageBox::warning(this,
+                                     QStringLiteral("HYWDbg"),
+                                     QString::fromUtf8("用32位的HYWDbg调试此程序"));
+                log(QStringLiteral("Launch rejected: target is not a 64-bit PE")
+                    + (peError.isEmpty() ? QString() : QStringLiteral(" (") + peError + QLatin1Char(')')),
+                    LogKind::Warn);
+                setStatus(QStringLiteral("Launch rejected: non-x64 target"));
+                return;
             }
             setDebugState(QStringLiteral("starting"));
             startDaemon();
