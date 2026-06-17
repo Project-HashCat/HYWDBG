@@ -85,7 +85,7 @@ void MainWindow::runCommand(const QString& line)
             if (!isPe64Executable(exe, &peError)) {
                 QMessageBox::warning(this,
                                      QStringLiteral("HYWDbg"),
-                                     QString::fromUtf8("用32位的HYWDbg调试此程序"));
+                                     QStringLiteral("Please use the 32-bit HYWDbg to debug this program."));
                 log(QStringLiteral("Launch rejected: target is not a 64-bit PE")
                     + (peError.isEmpty() ? QString() : QStringLiteral(" (") + peError + QLatin1Char(')')),
                     LogKind::Warn);
