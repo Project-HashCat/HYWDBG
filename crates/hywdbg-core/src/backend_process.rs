@@ -11,8 +11,8 @@ pub struct BackendProcess {
     pub kind: String,
     child: Mutex<Child>,
     stdin: Mutex<ChildStdin>,
-    stdout: Mutex<BufReader<tokio::process::ChildStdout>>,
     next_id: Mutex<u64>,
+    pending: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<u64, tokio::sync::oneshot::Sender<RpcResponse>>>>,
 }
 
 impl BackendProcess {
@@ -27,12 +27,30 @@ impl BackendProcess {
         let stdin = child.stdin.take().ok_or_else(|| anyhow!("backend stdin unavailable"))?;
         let stdout = child.stdout.take().ok_or_else(|| anyhow!("backend stdout unavailable"))?;
 
+        let pending = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::<u64, tokio::sync::oneshot::Sender<RpcResponse>>::new()));
+        let pending_clone = pending.clone();
+
+        tokio::spawn(async move {
+            let mut reader = tokio::io::BufReader::new(stdout);
+            let mut line = String::new();
+            while let Ok(n) = reader.read_line(&mut line).await {
+                if n == 0 { break; }
+                if let Ok(resp) = serde_json::from_str::<RpcResponse>(&line) {
+                    let mut p = pending_clone.lock().unwrap();
+                    if let Some(tx) = p.remove(&resp.id) {
+                        let _ = tx.send(resp);
+                    }
+                }
+                line.clear();
+            }
+        });
+
         Ok(Self {
             kind,
             child: Mutex::new(child),
             stdin: Mutex::new(stdin),
-            stdout: Mutex::new(BufReader::new(stdout)),
             next_id: Mutex::new(1),
+            pending,
         })
     }
 
@@ -44,6 +62,12 @@ impl BackendProcess {
             id
         };
 
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        {
+            let mut p = self.pending.lock().unwrap();
+            p.insert(id, tx);
+        }
+
         let req = RpcRequest { id, method: method.into(), params };
         let line = serde_json::to_string(&req)?;
 
@@ -54,18 +78,10 @@ impl BackendProcess {
             stdin.flush().await?;
         }
 
-        let mut buf = String::new();
-        {
-            let mut stdout = self.stdout.lock().await;
-            let n = stdout.read_line(&mut buf).await?;
-            if n == 0 {
-                return Err(anyhow!("backend closed stdout"));
-            }
+        match rx.await {
+            Ok(resp) => Ok(resp),
+            Err(_) => Err(anyhow!("backend closed stdout before responding")),
         }
-
-        let resp: RpcResponse = serde_json::from_str(&buf)
-            .with_context(|| format!("backend returned invalid response: {buf}"))?;
-        Ok(resp)
     }
 
     pub async fn kill(&self) -> Result<()> {

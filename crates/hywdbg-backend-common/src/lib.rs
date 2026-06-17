@@ -17,8 +17,12 @@ pub fn run_stdio_backend(mut handler: impl BackendHandler) -> Result<()> {
             continue;
         }
 
-        let response = match serde_json::from_str::<RpcRequest>(&line) {
-            Ok(req) => handler.handle(&req.method, req.params),
+        let mut response = match serde_json::from_str::<RpcRequest>(&line) {
+            Ok(req) => {
+                let mut resp = handler.handle(&req.method, req.params);
+                resp.id = req.id;
+                resp
+            }
             Err(e) => RpcResponse::err(0, "bad_json", format!("cannot parse request: {e}")),
         };
 

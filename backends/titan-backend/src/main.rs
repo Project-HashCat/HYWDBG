@@ -35,12 +35,17 @@ fn c_str(s: &str) -> CString {
 extern "system" fn cb_entry_point() {
     update_last_context();
     let mut pid = 0;
+    let mut h_process = 0;
     unsafe {
         let pi = TitanGetProcessInformation();
-        if !pi.is_null() { pid = (*pi).dwProcessId; }
+        if !pi.is_null() {
+            pid = (*pi).dwProcessId;
+            h_process = (*pi).hProcess as usize;
+        }
     }
     send_event_and_wait(json!({
         "pid": pid,
+        "hProcess": h_process,
         "stopped": true,
         "event": "breakpoint",
         "reason": "entry",
@@ -51,12 +56,17 @@ extern "system" fn cb_entry_point() {
 extern "system" fn cb_system_breakpoint() {
     update_last_context();
     let mut pid = 0;
+    let mut h_process = 0;
     unsafe {
         let pi = TitanGetProcessInformation();
-        if !pi.is_null() { pid = (*pi).dwProcessId; }
+        if !pi.is_null() {
+            pid = (*pi).dwProcessId;
+            h_process = (*pi).hProcess as usize;
+        }
     }
     send_event_and_wait(json!({
         "pid": pid,
+        "hProcess": h_process,
         "stopped": true,
         "event": "breakpoint",
         "reason": "system_bp",
@@ -67,12 +77,17 @@ extern "system" fn cb_system_breakpoint() {
 extern "system" fn cb_custom_handler() {
     update_last_context();
     let mut pid = 0;
+    let mut h_process = 0;
     unsafe {
         let pi = TitanGetProcessInformation();
-        if !pi.is_null() { pid = (*pi).dwProcessId; }
+        if !pi.is_null() {
+            pid = (*pi).dwProcessId;
+            h_process = (*pi).hProcess as usize;
+        }
     }
     send_event_and_wait(json!({
         "pid": pid,
+        "hProcess": h_process,
         "stopped": true,
         "event": "breakpoint",
         "reason": "go",
@@ -146,6 +161,7 @@ fn send_event_and_wait(value: Value) {
 
 struct BackendState {
     attached_pid: Option<u64>,
+    attached_hprocess: Option<windows_sys::Win32::Foundation::HANDLE>,
     launched_path: Option<String>,
     ev_rx: Option<Receiver<RpcResponse>>,
 }
@@ -154,6 +170,7 @@ impl Default for BackendState {
     fn default() -> Self {
         Self {
             attached_pid: None,
+            attached_hprocess: None,
             launched_path: None,
             ev_rx: None,
         }
@@ -236,6 +253,13 @@ impl BackendHandler for BackendState {
                             if let Some(pid_val) = val.get("pid") {
                                 if let Some(pid) = pid_val.as_u64() {
                                     self.attached_pid = Some(pid);
+                                }
+                            }
+                            if let Some(hproc_val) = val.get("hProcess") {
+                                if let Some(hproc) = hproc_val.as_u64() {
+                                    if hproc != 0 {
+                                        self.attached_hprocess = Some(hproc as windows_sys::Win32::Foundation::HANDLE);
+                                    }
                                 }
                             }
                         }
@@ -357,13 +381,9 @@ impl BackendHandler for BackendState {
                 
                 let mut buf = vec![0u8; size as usize];
                 let mut bytes_read: usize = 0;
-                if let Some(pid) = self.attached_pid {
+                if let Some(h) = self.attached_hprocess {
                     unsafe {
-                        let h = OpenProcess(windows_sys::Win32::System::Threading::PROCESS_VM_READ, 0, pid as u32);
-                        if !h.is_null() {
-                            windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory(h, addr as *const _, buf.as_mut_ptr() as *mut _, size as usize, &mut bytes_read);
-                            windows_sys::Win32::Foundation::CloseHandle(h);
-                        }
+                        windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory(h, addr as *const _, buf.as_mut_ptr() as *mut _, size as usize, &mut bytes_read);
                     }
                 }
                 
@@ -386,13 +406,9 @@ impl BackendHandler for BackendState {
                 }
                 
                 let mut bytes_written: usize = 0;
-                if let Some(pid) = self.attached_pid {
+                if let Some(h) = self.attached_hprocess {
                     unsafe {
-                        let h = OpenProcess(windows_sys::Win32::System::Threading::PROCESS_VM_WRITE | windows_sys::Win32::System::Threading::PROCESS_VM_OPERATION, 0, pid as u32);
-                        if !h.is_null() {
-                            windows_sys::Win32::System::Diagnostics::Debug::WriteProcessMemory(h, addr as *const _, bytes.as_ptr() as *const _, bytes.len() as usize, &mut bytes_written);
-                            windows_sys::Win32::Foundation::CloseHandle(h);
-                        }
+                        windows_sys::Win32::System::Diagnostics::Debug::WriteProcessMemory(h, addr as *const _, bytes.as_ptr() as *const _, bytes.len() as usize, &mut bytes_written);
                     }
                 }
                 RpcResponse::ok(0, json!({ "success": bytes_written > 0 }))
@@ -433,13 +449,9 @@ impl BackendHandler for BackendState {
                 let mut buf = vec![0u8; read_size];
                 let mut bytes_read: usize = 0;
 
-                if let Some(pid) = self.attached_pid {
+                if let Some(h) = self.attached_hprocess {
                     unsafe {
-                        let h = OpenProcess(windows_sys::Win32::System::Threading::PROCESS_VM_READ, 0, pid as u32);
-                        if !h.is_null() {
-                            windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory(h, addr as *const _, buf.as_mut_ptr() as *mut _, read_size as usize, &mut bytes_read);
-                            windows_sys::Win32::Foundation::CloseHandle(h);
-                        }
+                        windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory(h, addr as *const _, buf.as_mut_ptr() as *mut _, read_size as usize, &mut bytes_read);
                     }
                 }
 
@@ -659,9 +671,57 @@ impl BackendHandler for BackendState {
     }
 }
 
-fn main() {
-    let state = BackendState::default();
-    if let Err(e) = run_stdio_backend(state) {
-        eprintln!("Backend error: {e}");
+fn main() -> anyhow::Result<()> {
+    let (stdin_tx, stdin_rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let stdin = std::io::stdin();
+        for line in std::io::BufRead::lines(stdin.lock()) {
+            if let Ok(l) = line {
+                if !l.trim().is_empty() {
+                    let _ = stdin_tx.send(l);
+                }
+            }
+        }
+    });
+
+    let mut state = BackendState::default();
+    let mut stdout = std::io::stdout();
+    let mut pending_cmd: Option<u64> = None;
+
+    loop {
+        if let Ok(line) = stdin_rx.try_recv() {
+            if let Ok(req) = serde_json::from_str::<hywdbg_protocol::RpcRequest>(&line) {
+                if req.method == "go" || req.method == "stepInto" || req.method == "stepOver" || req.method == "stepOut" {
+                    if let Some(tx) = CMD_TX.lock().unwrap().as_ref() {
+                        let _ = tx.send(req.method.clone());
+                    }
+                    pending_cmd = Some(req.id);
+                } else {
+                    use hywdbg_backend_common::BackendHandler;
+                    let mut resp = state.handle(&req.method, req.params);
+                    resp.id = req.id;
+                    if let Ok(encoded) = serde_json::to_string(&resp) {
+                        use std::io::Write;
+                        let _ = writeln!(stdout, "{encoded}");
+                        let _ = stdout.flush();
+                    }
+                }
+            }
+        }
+
+        if let Some(rx) = state.ev_rx.as_ref() {
+            if let Ok(mut resp) = rx.try_recv() {
+                if let Some(id) = pending_cmd.take() {
+                    resp.id = id;
+                    if let Ok(encoded) = serde_json::to_string(&resp) {
+                        use std::io::Write;
+                        let _ = writeln!(stdout, "{encoded}");
+                        let _ = stdout.flush();
+                    }
+                }
+            }
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
 }

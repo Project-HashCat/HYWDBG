@@ -83,28 +83,36 @@ fn default_backend_dir() -> PathBuf {
 }
 
 async fn handle_client(core: CoreHandle, stream: TcpStream) -> Result<()> {
-    let (read_half, mut write_half) = stream.into_split();
+    let (read_half, write_half) = stream.into_split();
     let mut reader = BufReader::new(read_half).lines();
+    
+    let write_half = std::sync::Arc::new(tokio::sync::Mutex::new(write_half));
 
     while let Some(line) = reader.next_line().await? {
         if line.trim().is_empty() {
             continue;
         }
 
-        let response = match serde_json::from_str::<RpcRequest>(&line) {
-            Ok(req) => {
-                core.handle_frontend_request(req.id, &req.method, req.params)
-                    .await
-            }
-            Err(e) => {
-                RpcResponse::err(0, "bad_json", format!("cannot parse frontend request: {e}"))
-            }
-        };
+        let core = core.clone();
+        let write_half = write_half.clone();
+        
+        tokio::spawn(async move {
+            let response = match serde_json::from_str::<RpcRequest>(&line) {
+                Ok(req) => {
+                    core.handle_frontend_request(req.id, &req.method, req.params).await
+                }
+                Err(e) => {
+                    RpcResponse::err(0, "bad_json", format!("cannot parse frontend request: {e}"))
+                }
+            };
 
-        let encoded = serde_json::to_string(&response)?;
-        write_half.write_all(encoded.as_bytes()).await?;
-        write_half.write_all(b"\n").await?;
-        write_half.flush().await?;
+            if let Ok(encoded) = serde_json::to_string(&response) {
+                let mut w = write_half.lock().await;
+                let _ = w.write_all(encoded.as_bytes()).await;
+                let _ = w.write_all(b"\n").await;
+                let _ = w.flush().await;
+            }
+        });
     }
 
     Ok(())
